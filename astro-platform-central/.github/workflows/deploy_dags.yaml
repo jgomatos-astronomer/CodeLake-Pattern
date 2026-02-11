@@ -1,0 +1,63 @@
+name: Production Aggregator (Fast Lane)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # Run every 5 minutes
+  workflow_dispatch:      # Manual trigger
+
+concurrency: 
+  group: prod-deployment-dags
+  cancel-in-progress: false
+
+jobs:
+  deploy_dags:
+    runs-on: ubuntu-latest
+    env:
+      ASTRO_API_TOKEN: "INSERT_API_TOKEN_HERE"
+      AWS_ACCESS_KEY_ID: "INSERT_AWS_ACCESS_KEY_ID_HERE"
+      AWS_SECRET_ACCESS_KEY: "INSERT_AWS_SECRET_ACCESS_KEY_HERE"
+      AWS_DEFAULT_REGION: "INSERT_AWS_DEFAULT_REGION_HERE"
+      S3_BUCKET_NAME: "INSERT_S3_BUCKET_NAME_HERE"
+      DEPLOYMENT_ID: "INSERT_DEPLOYMENT_ID_HERE" 
+
+    steps:
+      - name: Checkout Central Repo
+        uses: actions/checkout@v4
+
+      - name: Install Astro CLI
+        run: curl -sSL install.astronomer.io | sudo bash -s
+
+      - name: Install Python (For Safety Check)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' 
+
+      # 1. SYNC FROM CODE LAKE
+      - name: Download from S3
+        run: |
+          # Clean local folders to ensure deleted files in S3 are removed locally
+          rm -rf dags/* include/*
+          
+          # Sync the bucket content.
+          # Since teams push to s3://bucket/dags/<team-name>, 
+          # this command will create dags/data-science/ and dags/data-eng/ locally.
+          aws s3 sync s3://${{ env.S3_BUCKET_NAME }}/dags/ ./dags/ --delete
+          aws s3 sync s3://${{ env.S3_BUCKET_NAME }}/include/ ./include/ --delete
+          
+          echo "--- Sync Complete. Local Structure: ---"
+          ls -R dags/
+
+      # 2. SAFETY GATE
+      - name: Run Integrity Check
+        run: |
+          # Install safety dependencies + user requirements (to prevent ModuleNotFound errors)
+          pip install apache-airflow astronomer-cosmos
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          
+          python3 scripts/ci_safety_check.py
+
+      # 3. DEPLOY TO ASTRO
+      - name: Deploy to Astro
+        run: |
+          # --dags: Updates only the DAGs (No scheduler restart)
+          astro deploy ${{ env.DEPLOYMENT_ID }} --dags --force

@@ -1,0 +1,29 @@
+name: Sync Data Science to Lake
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  sync_ds:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Sync DAGs & dbt
+        run: |
+          aws s3 sync ./dags/team-two s3://${{ env.S3_BUCKET }}/dags/team-two/ --delete 
+
+
+      - name: Sync Include
+        run: |
+          # 1. Ensure the directory exists locally (even if empty)
+          # This prevents the "path does not exist" error
+          mkdir -p ./include/team-two
+
+          # 2. Sync (The --delete flag will wipe S3 if local is empty)
+          aws s3 sync ./include/team-two s3://${{ env.S3_BUCKET }}/include/team-two/ --delete

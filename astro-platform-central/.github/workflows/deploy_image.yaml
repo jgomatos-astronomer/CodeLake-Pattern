@@ -1,0 +1,35 @@
+name: Production Infrastructure (Slow Lane)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'packages.txt'
+  workflow_dispatch:
+
+concurrency: 
+  group: prod-deployment-image
+  cancel-in-progress: false
+
+jobs:
+  deploy_image:
+    runs-on: ubuntu-latest
+    env:
+      ASTRO_API_TOKEN: "INSERT_API_TOKEN_HERE"
+      DEPLOYMENT_ID: "INSERT_DEPLOYMENT_ID_HERE"
+
+    steps:
+      - name: Checkout Central Repo
+        uses: actions/checkout@v4
+
+      - name: Install Astro CLI
+        run: curl -sSL install.astronomer.io | sudo bash -s
+
+      - name: Deploy Image
+        run: |
+          # --image: Rebuilds Docker image (Restarts Scheduler)
+          # DAGs from the 'Fast Lane' will persist in the volume
+          astro deploy <INSERT_DEPLOYMENT_ID_HERE> --image --force
